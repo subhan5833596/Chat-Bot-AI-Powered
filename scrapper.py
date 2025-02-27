@@ -3,10 +3,11 @@ import csv
 import json
 import time
 from urllib.parse import urljoin, urlparse
-from utils import get_page_source, extract_text_bs, extract_links_bs
+from utils import get_page_source, extract_clean_text, extract_links_bs
 import config  # Import configuration
 
 START_URL = config.START_URL
+FILE_NAME = config.FILE_NAME
 OUTPUT_FORMAT = config.OUTPUT_FORMAT
 MAX_LINKS = 100  # Limit to 100 links
 
@@ -26,12 +27,17 @@ def scrape_recursive(url):
     if not page_source:
         return
 
-    # Extract text & links
-    text = extract_text_bs(page_source)
-    links = extract_links_bs(page_source, url)
+    # Extract cleaned text & structured data
+    structured_data = extract_clean_text(page_source)
 
-    # Store data
-    data_store.append({"url": url, "text": text})
+    # Store data in structured format
+    data_store.append({
+        "url": url,
+        "title": structured_data["title"],
+        "headings": structured_data["headings"],
+        "paragraphs": structured_data["paragraphs"],
+        "lists": structured_data["lists"]
+    })
 
     # Stop if we reach the max limit
     if len(visited_urls) >= MAX_LINKS:
@@ -39,7 +45,7 @@ def scrape_recursive(url):
 
     # Filter links - Keep only internal links
     base_domain = urlparse(START_URL).netloc
-    links = [link for link in links if urlparse(link).netloc == base_domain]
+    links = [link for link in extract_links_bs(page_source, url) if urlparse(link).netloc == base_domain]
 
     # Recursively scrape new links
     for link in links:
@@ -48,20 +54,18 @@ def scrape_recursive(url):
         else:
             break
 
-def save_data():
-    """Saves scraped data to CSV or JSON."""
-    if OUTPUT_FORMAT == "csv":
-        with open("scraped_data.csv", "w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=["url", "text"])
-            writer.writeheader()
-            writer.writerows(data_store)
-        print("✅ Data saved to scraped_data.csv")
+def save_data(filename):
+    """Saves scraped data to JSONL format."""
+    file_name = f"{filename}.jsonl"
+    print(f"Saving scraped data to {file_name}")
+    
+    with open(file_name, "w", encoding="utf-8") as f:
+        for entry in data_store:
+            json.dump(entry, f, ensure_ascii=False)
+            f.write("\n")
 
-    elif OUTPUT_FORMAT == "json":
-        with open("scraped_data.json", "w", encoding="utf-8") as f:
-            json.dump(data_store, f, indent=4)
-        print("✅ Data saved to scraped_data.json")
+    print(f"✅ Data saved to {file_name}")
 
 # Run Scraper
 scrape_recursive(START_URL)
-save_data()
+save_data(FILE_NAME)
